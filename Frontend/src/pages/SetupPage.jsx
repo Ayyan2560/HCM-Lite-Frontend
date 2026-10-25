@@ -1,212 +1,236 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Box, Paper, Typography, TextField, Button, Stack, CircularProgress, Alert, Stepper, Step, StepLabel, MenuItem, InputAdornment, IconButton,
-} from '@mui/material';
-import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
-import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
-import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertCircle, ArrowRight, Building2, CheckCircle2 } from 'lucide-react';
+import AuthLayout from '../components/auth/AuthLayout';
+import Field from '../components/ui/Field';
+import PasswordInput from '../components/ui/PasswordInput';
 import { useAuth } from '../context/AuthContext';
-import { brandColors } from '../theme/theme';
+import authApi from '../api/auth';
+import { getErrorMessage } from '../api/client';
+import { validatePassword } from '../lib/validation';
 
-const STEPS = ['Company Details', 'Admin Account'];
+const TIMEZONES = [
+  'Asia/Karachi', 'Asia/Dubai', 'Asia/Riyadh', 'Asia/Kolkata', 'Asia/Kathmandu',
+  'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles', 'UTC',
+];
+const CURRENCIES = ['PKR', 'USD', 'AED', 'SAR', 'GBP', 'EUR', 'INR', 'CAD', 'AUD'];
 
-const TIMEZONES = ['Asia/Karachi', 'Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai'];
-
-export const SetupPage = () => {
+export default function SetupPage() {
+  const { setup, isAuthenticated, loading, mustChangePassword } = useAuth();
   const navigate = useNavigate();
-  const { setup, isAuthenticated } = useAuth();
-
-  const [activeStep, setActiveStep] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-
+  const [status, setStatus] = useState({ loading: true, required: false, companyName: '' });
   const [form, setForm] = useState({
     companyName: '',
-    timezone: 'Asia/Karachi',
-    currency: 'PKR',
     adminName: '',
     email: '',
     password: '',
     confirmPassword: '',
+    timezone: 'Asia/Karachi',
+    currency: 'PKR',
   });
   const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (isAuthenticated) navigate('/', { replace: true });
-  }, [isAuthenticated, navigate]);
+    authApi.setupStatus()
+      .then((data) => setStatus({ loading: false, required: Boolean(data.setupRequired), companyName: data.companyName || '' }))
+      .catch((error) => setStatus({ loading: false, required: false, error: getErrorMessage(error) }));
+  }, []);
 
-  const set = (field) => (e) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }));
-    setErrors((prev) => ({ ...prev, [field]: '' }));
-  };
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      navigate(mustChangePassword ? '/change-password' : '/', { replace: true });
+    }
+  }, [loading, isAuthenticated, mustChangePassword, navigate]);
 
-  const validateStep0 = () => {
-    const errs = {};
-    if (!form.companyName.trim()) errs.companyName = 'Company name is required';
-    setErrors(errs);
-    return !Object.keys(errs).length;
-  };
+  const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
 
-  const validateStep1 = () => {
-    const errs = {};
-    if (!form.adminName.trim()) errs.adminName = 'Your name is required';
-    if (!form.email.trim() || !/\S+@\S+\.\S+/.test(form.email)) errs.email = 'Valid email is required';
-    if (!form.password || form.password.length < 8) errs.password = 'Min 8 characters';
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.password)) errs.password = 'Must include uppercase, lowercase and a number';
-    if (form.password !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match';
-    setErrors(errs);
-    return !Object.keys(errs).length;
-  };
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const nextErrors = {};
+    if (form.companyName.trim().length < 2) nextErrors.companyName = 'Company name must be at least 2 characters.';
+    if (form.adminName.trim().length < 2) nextErrors.adminName = 'Your name must be at least 2 characters.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) nextErrors.email = 'Enter a valid email address.';
+    const passwordProblem = validatePassword(form.password);
+    if (passwordProblem) nextErrors.password = passwordProblem;
+    if (form.password !== form.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.';
+    setErrors(nextErrors);
+    setFormError('');
+    if (Object.keys(nextErrors).length) return;
 
-  const handleNext = () => {
-    if (activeStep === 0 && validateStep0()) setActiveStep(1);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateStep1()) return;
-    setLoading(true);
-    setError('');
+    setBusy(true);
     try {
       await setup({
-        companyName: form.companyName,
+        companyName: form.companyName.trim(),
+        adminName: form.adminName.trim(),
+        email: form.email.trim(),
+        password: form.password,
         timezone: form.timezone,
         currency: form.currency,
-        adminName: form.adminName,
-        email: form.email.toLowerCase().trim(),
-        password: form.password,
       });
       navigate('/', { replace: true });
-    } catch (err) {
-      setError(err.message);
+    } catch (error) {
+      setFormError(getErrorMessage(error, 'Workspace setup failed.'));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
+  if (!status.loading && !status.required) {
+    return (
+      <AuthLayout>
+        <div className="auth-card">
+          <div className="auth-form-head">
+            <h1>Workspace already set up</h1>
+            <p>This installation is already initialised. Sign in with your administrator account.</p>
+          </div>
+          <div className="auth-form">
+            <div className="auth-alert auth-alert-success">
+              <CheckCircle2 size={15} />
+              <span>{status.companyName ? `${status.companyName} is ready.` : 'The workspace is ready.'}</span>
+            </div>
+            <Link to="/login" className="btn btn-primary btn-lg btn-block">Go to sign in</Link>
+          </div>
+        </div>
+      </AuthLayout>
+    );
+  }
+
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        backgroundColor: brandColors.slate[50],
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        p: 3,
-      }}
-    >
-      <Box sx={{ width: '100%', maxWidth: 560 }}>
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 4, justifyContent: 'center' }}>
-          <Box
-            sx={{
-              width: 48, height: 48, borderRadius: 2.5,
-              backgroundColor: brandColors.primary.main,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            <BusinessRoundedIcon sx={{ color: '#fff', fontSize: 28 }} />
-          </Box>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.1 }}>
-              HCM <span style={{ color: brandColors.primary.main }}>Lite</span>
-            </Typography>
-            <Typography variant="caption" sx={{ color: brandColors.slate[500] }}>
-              First-Run Setup
-            </Typography>
-          </Box>
-        </Stack>
+    <AuthLayout>
+      <div className="auth-card auth-card-wide">
+        <div className="auth-form-head">
+          <p className="page-eyebrow">First-run setup</p>
+          <h1>Create your workspace</h1>
+          <p>This creates the company and the only initial administrator account. You can add HR accounts afterwards.</p>
+        </div>
 
-        <Paper sx={{ p: { xs: 3, sm: 4 }, borderRadius: 3 }}>
-          <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5 }}>
-            Welcome to HCM Lite
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Let's set up your company and create the first Admin account.
-          </Typography>
+        <div className="auth-form">
+          {status.error && (
+            <div className="auth-alert">
+              <AlertCircle size={15} />
+              <span>{status.error}</span>
+            </div>
+          )}
+          {formError && (
+            <div className="auth-alert" role="alert">
+              <AlertCircle size={15} />
+              <span>{formError}</span>
+            </div>
+          )}
 
-          <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-            {STEPS.map((label) => (
-              <Step key={label}><StepLabel>{label}</StepLabel></Step>
-            ))}
-          </Stepper>
+          <form onSubmit={handleSubmit} noValidate>
+            <div className="setup-section">
+              <h2 className="form-section-title"><Building2 size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />Company</h2>
+              <p className="form-section-help">The organisation name appears across dashboards and payslips.</p>
+              <div className="form-grid">
+                <Field label="Company name" htmlFor="setup-company" required error={errors.companyName} className="span-2">
+                  {({ describedBy }) => (
+                    <input
+                      id="setup-company"
+                      className="input"
+                      value={form.companyName}
+                      onChange={update('companyName')}
+                      placeholder="Northstar Technologies"
+                      aria-invalid={Boolean(errors.companyName)}
+                      aria-describedby={describedBy}
+                      disabled={busy}
+                      autoFocus
+                    />
+                  )}
+                </Field>
+                <Field label="Currency" htmlFor="setup-currency" hint="Used for payroll and salary displays.">
+                  {({ describedBy }) => (
+                    <select id="setup-currency" className="select" value={form.currency} onChange={update('currency')} aria-describedby={describedBy} disabled={busy}>
+                      {CURRENCIES.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Timezone" htmlFor="setup-timezone" hint="Attendance and payroll dates use this timezone.">
+                  {({ describedBy }) => (
+                    <select id="setup-timezone" className="select" value={form.timezone} onChange={update('timezone')} aria-describedby={describedBy} disabled={busy}>
+                      {TIMEZONES.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                    </select>
+                  )}
+                </Field>
+              </div>
+            </div>
 
-          {error && <Alert severity="error" sx={{ mb: 2.5, borderRadius: 2 }}>{error}</Alert>}
+            <div className="setup-section">
+              <h2 className="form-section-title">Administrator account</h2>
+              <p className="form-section-help">You can add HR users and employees once setup is complete.</p>
+              <div className="form-grid">
+                <Field label="Your name" htmlFor="setup-name" required error={errors.adminName}>
+                  {({ describedBy }) => (
+                    <input
+                      id="setup-name"
+                      className="input"
+                      value={form.adminName}
+                      onChange={update('adminName')}
+                      placeholder="Ayesha Khan"
+                      autoComplete="name"
+                      aria-invalid={Boolean(errors.adminName)}
+                      aria-describedby={describedBy}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label="Work email" htmlFor="setup-email" required error={errors.email}>
+                  {({ describedBy }) => (
+                    <input
+                      id="setup-email"
+                      className="input"
+                      type="email"
+                      value={form.email}
+                      onChange={update('email')}
+                      placeholder="admin@company.com"
+                      autoComplete="username"
+                      aria-invalid={Boolean(errors.email)}
+                      aria-describedby={describedBy}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label="Password" htmlFor="setup-password" required error={errors.password} hint="At least 8 characters with a letter and a number.">
+                  {({ describedBy }) => (
+                    <PasswordInput
+                      id="setup-password"
+                      value={form.password}
+                      onChange={update('password')}
+                      autoComplete="new-password"
+                      placeholder="Create a password"
+                      describedBy={describedBy}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label="Confirm password" htmlFor="setup-confirm" required error={errors.confirmPassword}>
+                  {({ describedBy }) => (
+                    <PasswordInput
+                      id="setup-confirm"
+                      value={form.confirmPassword}
+                      onChange={update('confirmPassword')}
+                      autoComplete="new-password"
+                      placeholder="Repeat the password"
+                      describedBy={describedBy}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+              </div>
+            </div>
 
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            {activeStep === 0 && (
-              <Stack spacing={2.5}>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Company Name *</Typography>
-                  <TextField fullWidth placeholder="Northstar Technologies" value={form.companyName} onChange={set('companyName')} error={Boolean(errors.companyName)} helperText={errors.companyName} />
-                </Box>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Timezone</Typography>
-                  <TextField select fullWidth value={form.timezone} onChange={set('timezone')}>
-                    {TIMEZONES.map((tz) => <MenuItem key={tz} value={tz}>{tz}</MenuItem>)}
-                  </TextField>
-                </Box>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Currency</Typography>
-                  <TextField select fullWidth value={form.currency} onChange={set('currency')}>
-                    {['PKR', 'USD', 'INR', 'AED', 'GBP', 'EUR'].map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-                  </TextField>
-                </Box>
-                <Button variant="contained" size="large" fullWidth onClick={handleNext} sx={{ mt: 1, fontWeight: 700, py: 1.4 }}>
-                  Continue
-                </Button>
-              </Stack>
-            )}
+            <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy}>
+              {busy ? 'Creating workspace…' : <>Create workspace <ArrowRight size={16} /></>}
+            </button>
+          </form>
 
-            {activeStep === 1 && (
-              <Stack spacing={2.5}>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Your Full Name *</Typography>
-                  <TextField fullWidth placeholder="Sara Ahmed" value={form.adminName} onChange={set('adminName')} error={Boolean(errors.adminName)} helperText={errors.adminName} />
-                </Box>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Admin Email *</Typography>
-                  <TextField fullWidth type="email" placeholder="admin@company.com" value={form.email} onChange={set('email')} error={Boolean(errors.email)} helperText={errors.email} />
-                </Box>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Password *</Typography>
-                  <TextField
-                    fullWidth
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="Min 8 chars, uppercase + number"
-                    value={form.password}
-                    onChange={set('password')}
-                    error={Boolean(errors.password)}
-                    helperText={errors.password}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton onClick={() => setShowPassword(!showPassword)} size="small">
-                            {showPassword ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Box>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Confirm Password *</Typography>
-                  <TextField fullWidth type={showPassword ? 'text' : 'password'} placeholder="Repeat password" value={form.confirmPassword} onChange={set('confirmPassword')} error={Boolean(errors.confirmPassword)} helperText={errors.confirmPassword} />
-                </Box>
-                <Stack direction="row" spacing={2}>
-                  <Button variant="outlined" color="inherit" onClick={() => setActiveStep(0)} sx={{ flex: 1 }}>Back</Button>
-                  <Button type="submit" variant="contained" size="large" disabled={loading} sx={{ flex: 2, fontWeight: 700, py: 1.4 }}>
-                    {loading ? <CircularProgress size={24} color="inherit" /> : 'Create Company & Admin'}
-                  </Button>
-                </Stack>
-              </Stack>
-            )}
-          </Box>
-        </Paper>
-      </Box>
-    </Box>
+          <p className="auth-form-footer">
+            Already initialised? <Link to="/login">Sign in instead</Link>
+          </p>
+        </div>
+      </div>
+    </AuthLayout>
   );
-};
-
-export default SetupPage;
+}

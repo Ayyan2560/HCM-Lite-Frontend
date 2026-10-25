@@ -1,78 +1,228 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Box, Card, Typography, Button, Stack, CircularProgress, Alert, Chip,
-} from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
-
-import payrollApi from '../api/payrollApi';
+  CalendarRange, CheckCircle2, Download, ReceiptText, RefreshCw, WalletCards,
+} from 'lucide-react';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import EmptyState from '../components/ui/EmptyState';
+import ErrorState from '../components/ui/ErrorState';
+import { TableSkeleton } from '../components/ui/Skeleton';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import payrollApi from '../api/payroll';
+import { getErrorMessage } from '../api/client';
+import { formatDateTime, formatMoney, formatMonth, formatNumber } from '../lib/format';
 
-export const PayslipsPage = () => {
+export default function PayslipsPage() {
+  const toast = useToast();
   const { employee } = useAuth();
-  const [payslips, setPayslips] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [feedback, setFeedback] = useState(null);
+  const [error, setError] = useState('');
+  const [noProfile, setNoProfile] = useState(false);
+  const [downloadId, setDownloadId] = useState('');
 
-  useEffect(() => {
-    payrollApi.getMyPayslips().then(res => {
-      setPayslips(Array.isArray(res?.data) ? res.data : res?.data?.payslips || []);
-    }).catch(console.error).finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    setNoProfile(false);
+    try {
+      const result = await payrollApi.myPayslips();
+      setData(result);
+    } catch (err) {
+      if (err.response?.status === 404) setNoProfile(true);
+      else setError(getErrorMessage(err, 'Your payslips could not be loaded.'));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleDownload = async (payrollId, employeeId) => {
+  useEffect(() => { load(); }, [load]);
+
+  const items = data?.items || [];
+  const currency = data?.currency || 'PKR';
+  const totals = useMemo(() => items.reduce((accumulator, item) => ({
+    net: accumulator.net + Number(item.net || 0),
+    tax: accumulator.tax + Number(item.tax || 0),
+  }), { net: 0, tax: 0 }), [items]);
+  const latest = items[0];
+
+  const download = async (item) => {
+    setDownloadId(item.payrollId);
     try {
-      const blob = await payrollApi.downloadPayslipPdf(payrollId, employeeId || employee?._id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `payslip-${payrollId}.pdf`; a.click();
-    } catch (e) { setFeedback({ type: 'error', message: 'Download failed.' }); }
+      await payrollApi.downloadPayslip(
+        item.payrollId,
+        employee?.id,
+        `payslip-${employee?.code || 'employee'}-${item.period}.pdf`,
+      );
+      toast.success(`Payslip for ${formatMonth(item.period)} downloaded.`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'The payslip could not be downloaded.'));
+    } finally {
+      setDownloadId('');
+    }
   };
 
-  const getRowId = r => r._id || r.payrollId || r.id || Math.random().toString();
+  if (loading) {
+    return (
+      <div>
+        <PageHeader eyebrow="Finance" title="My payslips" description="Your finalized monthly payslips." />
+        <div className="card"><div className="card-body"><TableSkeleton rows={6} columns={6} /></div></div>
+      </div>
+    );
+  }
 
-  const columns = [
-    { field: 'period', headerName: 'Period', flex: 1, renderCell: p => <Typography variant="body2" fontWeight={600}>{p.value || p.row.payroll?.period}</Typography> },
-    { field: 'basicSalary', headerName: 'Basic', flex: 0.8, renderCell: p => <Typography variant="body2">${(p.value || 0).toLocaleString()}</Typography> },
-    { field: 'deductions', headerName: 'Deductions', flex: 0.8, renderCell: p => <Typography variant="body2" color="error">${(p.value || 0).toLocaleString()}</Typography> },
-    { field: 'netSalary', headerName: 'Net Salary', flex: 0.8, renderCell: p => <Typography variant="body2" fontWeight={700} color="success.main">${(p.value || 0).toLocaleString()}</Typography> },
-    { field: 'status', headerName: 'Status', flex: 0.7, renderCell: p => <Chip label={p.row.payroll?.status || 'finalized'} color="success" size="small" /> },
-    {
-      field: 'actions', headerName: '', flex: 0.8, sortable: false,
-      renderCell: p => (
-        <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />}
-          onClick={() => handleDownload(p.row.payrollId || p.row.payroll?._id || p.row._id, employee?._id)}>
-          Download PDF
-        </Button>
-      )
-    },
-  ];
+  if (noProfile) {
+    return (
+      <div>
+        <PageHeader eyebrow="Finance" title="My payslips" description="Your finalized monthly payslips." />
+        <EmptyState
+          icon={ReceiptText}
+          title="No employee profile linked"
+          message="Payslips are generated from an employee record. Ask HR to link your account to your employee profile."
+          action={<Link to="/profile" className="btn btn-secondary">View my account</Link>}
+        />
+      </div>
+    );
+  }
 
-  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', pt: 8 }}><CircularProgress /></Box>;
+  if (error) {
+    return (
+      <div>
+        <PageHeader eyebrow="Finance" title="My payslips" description="Your finalized monthly payslips." />
+        <ErrorState message={error} onRetry={load} title="Payslips unavailable" />
+      </div>
+    );
+  }
 
   return (
-    <Box sx={{ pb: 4 }}>
-      {feedback && <Alert severity={feedback.type} onClose={() => setFeedback(null)} sx={{ mb: 2 }}>{feedback.message}</Alert>}
+    <div>
+      <PageHeader
+        eyebrow="Finance"
+        title="My payslips"
+        description="Only finalized payroll runs appear here. Each payslip is a locked PDF generated from the stored run."
+        actions={(
+          <button type="button" className="btn btn-secondary" onClick={load} disabled={loading}>
+            <RefreshCw size={15} /> Refresh
+          </button>
+        )}
+      />
 
-      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 3 }}>
-        <ReceiptLongRoundedIcon color="primary" />
-        <Typography variant="h5" fontWeight={700}>My Payslips</Typography>
-      </Stack>
+      <div className="stat-grid">
+        <StatCard
+          icon={WalletCards}
+          label="Latest net pay"
+          value={latest ? formatMoney(latest.net, latest.currency) : '—'}
+          meta={latest ? formatMonth(latest.period) : 'No payslips'}
+          tone="brand"
+          footer={latest ? `Finalized ${formatDateTime(latest.finalizedAt)}` : 'Available after payroll finalization'}
+        />
+        <StatCard
+          icon={ReceiptText}
+          label="Payslips available"
+          value={formatNumber(items.length)}
+          meta="Finalized runs"
+          tone="info"
+          footer="Full history from payroll"
+        />
+        <StatCard
+          icon={CheckCircle2}
+          label="Net across payslips"
+          value={formatMoney(totals.net, currency)}
+          meta="All available"
+          tone="success"
+          footer="Sum of finalized net pay"
+        />
+        <StatCard
+          icon={CalendarRange}
+          label="Tax across payslips"
+          value={formatMoney(totals.tax, currency)}
+          meta="All available"
+          tone="violet"
+          footer="Monthly income tax withheld"
+        />
+      </div>
 
-      {payslips.length === 0 ? (
-        <Card sx={{ p: 4, textAlign: 'center' }}>
-          <ReceiptLongRoundedIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-          <Typography color="text.secondary">No payslips found yet.</Typography>
-        </Card>
-      ) : (
-        <Card sx={{ p: 2.5 }}>
-          <Box sx={{ height: 440 }}>
-            <DataGrid rows={payslips} columns={columns} getRowId={getRowId} pageSizeOptions={[10, 20]} initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} disableRowSelectionOnClick />
-          </Box>
-        </Card>
-      )}
-    </Box>
+      <div className="list-card mt-24">
+        <div className="list-card-head">
+          <div>
+            <h2>Payslip history</h2>
+            <p>{items.length === 0 ? 'No finalized payroll includes your employee record yet.' : `${items.length} finalized payslip${items.length === 1 ? '' : 's'}`}</p>
+          </div>
+        </div>
+
+        {items.length === 0 ? (
+          <EmptyState
+            icon={ReceiptText}
+            title="No payslips yet"
+            message="Your payslips will appear here once HR finalizes a payroll run that includes your employee record."
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Working days</th>
+                  <th>Present</th>
+                  <th>Absent</th>
+                  <th>Gross</th>
+                  <th>Deductions</th>
+                  <th>Tax</th>
+                  <th>Net</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={`${item.payrollId}-${item.period}`}>
+                    <td>
+                      <div className="day-meta">
+                        <strong>{formatMonth(item.period)}</strong>
+                        <span>Finalized {formatDateTime(item.finalizedAt)}</span>
+                      </div>
+                    </td>
+                    <td>{formatNumber(item.workingDays)}</td>
+                    <td>
+                      <div className="cell-sub">{item.presentDays} present</div>
+                      <div className="cell-sub">{item.paidLeaveDays} paid leave</div>
+                    </td>
+                    <td>
+                      <div className="cell-sub">{item.absentDays} absent</div>
+                      <div className="cell-sub">{item.halfDays} half day</div>
+                    </td>
+                    <td className="money">{formatMoney(item.gross, item.currency)}</td>
+                    <td className="money">{formatMoney(item.deductions, item.currency)}</td>
+                    <td className="money">{formatMoney(item.tax, item.currency)}</td>
+                    <td className="money money-strong">{formatMoney(item.net, item.currency)}</td>
+                    <td>
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => download(item)}
+                          disabled={downloadId === item.payrollId}
+                        >
+                          <Download size={14} /> {downloadId === item.payrollId ? 'Preparing…' : 'PDF'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="info-banner mt-16">
+        <ReceiptText size={16} />
+        <span>
+          Payslip figures are calculated by the payroll engine: basic salary plus 40% house rent and 10% medical,
+          less absence, half-day and unpaid-leave deductions and monthly income tax.
+        </span>
+      </div>
+    </div>
   );
-};
-
-export default PayslipsPage;
+}

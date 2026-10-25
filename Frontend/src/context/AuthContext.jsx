@@ -1,195 +1,155 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import authApi from '../api/authApi';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import authApi from '../api/auth';
+import { getErrorMessage } from '../api/client';
 
-export const AuthContext = createContext(null);
+const AuthContext = createContext(null);
 
-const TOKEN_KEY = 'hcm_lite_token';
-
-export function getStoredToken() {
-  return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || null;
-}
-
-export function clearStoredToken() {
-  sessionStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export const AuthProvider = ({ children }) => {
+export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [employee, setEmployee] = useState(null);
   const [organization, setOrganization] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [mustChangePassword, setMustChangePassword] = useState(false);
-  const [error, setError] = useState(null);
-  const isMock = false;
+  const [sessionMessage, setSessionMessage] = useState('');
+  const [bootError, setBootError] = useState('');
+  const mounted = useRef(true);
 
-  // Check current session (called once on mount + after login/setup)
-  const checkAuth = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) {
-      setUser(null);
-      setEmployee(null);
-      setOrganization(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await authApi.getMe();
-      setUser(data.user || null);
-      setEmployee(data.employee || null);
-      setOrganization(data.organization || null);
-      setMustChangePassword(!!(data.user?.mustChangePassword));
-    } catch (err) {
-      const status = err?.response?.status;
-      if (status === 401 || status === 403) {
-        clearStoredToken();
-        setUser(null);
-        setEmployee(null);
-        setOrganization(null);
-      } else {
-        console.warn('Auth check failed (network/server):', err.message);
-      }
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
   }, []);
+
+  const applySession = useCallback((session) => {
+    setUser(session?.user || null);
+    setEmployee(session?.employee || null);
+    setOrganization(session?.organization || null);
+    setBootError('');
+  }, []);
+
+  const clearSession = useCallback(() => {
+    setUser(null);
+    setEmployee(null);
+    setOrganization(null);
+  }, []);
+
+  const checkAuth = useCallback(async ({ silent = true } = {}) => {
+    setLoading(true);
+    try {
+      const session = await authApi.me();
+      if (mounted.current) applySession(session);
+      return session;
+    } catch (error) {
+      const status = error.response?.status;
+      if (mounted.current) {
+        clearSession();
+        if (status !== 401 && !silent) setBootError(getErrorMessage(error));
+      }
+      return null;
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }, [applySession, clearSession]);
 
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
 
-  // Handle global unauthorized events
   useEffect(() => {
-    const handler = () => {
-      clearStoredToken();
-      setUser(null);
-      setEmployee(null);
-      setOrganization(null);
+    const onExpired = (event) => {
+      clearSession();
+      setLoading(false);
+      if (!event.detail?.silent) {
+        setSessionMessage('Your session has expired. Please sign in again.');
+      }
     };
-    window.addEventListener('hcm:unauthorized', handler);
-    return () => window.removeEventListener('hcm:unauthorized', handler);
-  }, []);
+    const onPasswordRequired = () => {
+      setUser((current) => (current ? { ...current, mustChangePassword: true } : current));
+    };
+    window.addEventListener('hcm:session-expired', onExpired);
+    window.addEventListener('hcm:password-required', onPasswordRequired);
+    return () => {
+      window.removeEventListener('hcm:session-expired', onExpired);
+      window.removeEventListener('hcm:password-required', onPasswordRequired);
+    };
+  }, [clearSession]);
 
-  // Login
-  const login = async (credentials) => {
-    setLoading(true);
-    setError(null);
+  const login = useCallback(async (credentials) => {
+    const result = await authApi.login(credentials);
+    // The login response does not include the linked employee profile.
     try {
-      const data = await authApi.login(credentials);
-      setUser(data.user || null);
-      setEmployee(data.employee || null);
-      setOrganization(data.organization || null);
-      setMustChangePassword(!!(data.user?.mustChangePassword));
-      return data;
-    } catch (err) {
-      const msg = err?.response?.data?.data?.message
-        || err?.response?.data?.message
-        || err.message
-        || 'Login failed.';
-      setError(msg);
-      throw new Error(msg);
-    } finally {
-      setLoading(false);
+      const session = await authApi.me();
+      applySession(session || result);
+      return session || result;
+    } catch {
+      applySession(result);
+      return result;
     }
-  };
+  }, [applySession]);
 
-  // Setup (first-run)
-  const setup = async (payload) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await authApi.setup(payload);
-      setUser(data.user || null);
-      setOrganization(data.organization || null);
-      setMustChangePassword(false);
-      return data;
-    } catch (err) {
-      const msg = err?.response?.data?.data?.message
-        || err?.response?.data?.message
-        || err.message
-        || 'Setup failed.';
-      setError(msg);
-      throw new Error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const setup = useCallback(async (payload) => {
+    const result = await authApi.setup(payload);
+    applySession(result);
+    return result;
+  }, [applySession]);
 
-  // Direct employee registration is not exposed by the backend contract.
-  const signup = async () => {
-    const msg = 'Account registration is not available in this deployment. Use the organization setup flow or ask your administrator to invite you.';
-    setError(msg);
-    throw new Error(msg);
-  };
-
-  // Logout
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await authApi.logout();
     } catch {
-      clearStoredToken();
+      // Cookie may already have expired; clear local state regardless.
     } finally {
-      setUser(null);
-      setEmployee(null);
-      setOrganization(null);
-      setMustChangePassword(false);
+      clearSession();
+      setSessionMessage('');
     }
-  };
+  }, [clearSession]);
 
-  // Update local user/employee state (e.g. after profile update)
-  const updateUserData = (updatedFields) => {
-    setUser((prev) => (prev ? { ...prev, ...updatedFields } : prev));
-  };
+  const updateUser = useCallback((fields) => {
+    setUser((current) => (current ? { ...current, ...fields } : current));
+  }, []);
 
-  const updateEmployeeData = (updatedFields) => {
-    setEmployee((prev) => (prev ? { ...prev, ...updatedFields } : prev));
-  };
+  const updateEmployee = useCallback((fields) => {
+    setEmployee((current) => (current ? { ...current, ...fields } : current));
+  }, []);
 
-  // Role helpers
-  const role = (user?.role || '').toLowerCase();
-  const isAdmin = role === 'admin';
-  const isHR = role === 'hr' || isAdmin;
-  const isManager = isHR;
+  const updateOrganization = useCallback((fields) => {
+    setOrganization((current) => (current ? { ...current, ...fields } : fields));
+  }, []);
 
-  const hasRole = (allowedRoles = []) => {
-    if (!allowedRoles || allowedRoles.length === 0) return true;
-    if (!user) return false;
-    return allowedRoles.map((r) => r.toLowerCase()).includes(role);
-  };
-
-  const value = {
+  const role = user?.role || '';
+  const value = useMemo(() => ({
     user,
     employee,
     organization,
-    isAuthenticated: !!user,
-    loading,
-    error,
-    mustChangePassword,
-    isMock,
-    isAdmin,
-    isHR,
-    isManager,
-    hasRole,
     role,
+    loading,
+    sessionMessage,
+    bootError,
+    isAuthenticated: Boolean(user),
+    isAdmin: role === 'admin',
+    isHr: role === 'hr',
+    isStaff: role === 'admin' || role === 'hr',
+    isEmployee: role === 'employee',
+    mustChangePassword: Boolean(user?.mustChangePassword),
+    hasRole: (...roles) => roles.flat().includes(role),
     login,
     setup,
-    signup,
     logout,
     checkAuth,
-    updateUserData,
-    updateEmployeeData,
-  };
+    updateUser,
+    updateEmployee,
+    updateOrganization,
+    clearSessionMessage: () => setSessionMessage(''),
+  }), [
+    user, employee, organization, role, loading, sessionMessage, bootError,
+    login, setup, logout, checkAuth, updateUser, updateEmployee, updateOrganization,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
+}
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
-};
+}
 
 export default AuthContext;

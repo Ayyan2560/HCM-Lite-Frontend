@@ -1,141 +1,144 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Box, Paper, Typography, TextField, Button, Stack, Alert, CircularProgress, InputAdornment, IconButton,
-} from '@mui/material';
-import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
-import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
-import LockResetRoundedIcon from '@mui/icons-material/LockResetRounded';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertCircle, ArrowLeft, CheckCircle2, KeyRound } from 'lucide-react';
+import AuthLayout from '../components/auth/AuthLayout';
+import Field from '../components/ui/Field';
+import PasswordInput from '../components/ui/PasswordInput';
 import { useAuth } from '../context/AuthContext';
-import authApi from '../api/authApi';
-import { useSnackbar } from '../context/SnackbarContext';
-import { brandColors } from '../theme/theme';
+import authApi from '../api/auth';
+import { getErrorMessage } from '../api/client';
+import { validatePassword } from '../lib/validation';
+import { useToast } from '../context/ToastContext';
 
-export const ChangePasswordPage = () => {
+export default function ChangePasswordPage() {
+  const { user, mustChangePassword, updateUser } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
-  const { logout } = useAuth();
-  const snackbar = useSnackbar();
-
   const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNew, setShowNew] = useState(false);
   const [errors, setErrors] = useState({});
-  const [submitError, setSubmitError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const set = (field) => (e) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }));
-    setErrors((prev) => ({ ...prev, [field]: '' }));
-  };
+  const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
 
-  const validate = () => {
-    const errs = {};
-    if (!form.currentPassword) errs.currentPassword = 'Current password is required';
-    if (!form.newPassword || form.newPassword.length < 8) errs.newPassword = 'Min 8 characters';
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(form.newPassword)) errs.newPassword = 'Must include uppercase, lowercase and a digit';
-    if (form.newPassword === form.currentPassword) errs.newPassword = 'New password must differ from current';
-    if (form.newPassword !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match';
-    setErrors(errs);
-    return !Object.keys(errs).length;
-  };
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const nextErrors = {};
+    if (!form.currentPassword) nextErrors.currentPassword = 'Current password is required.';
+    const problem = validatePassword(form.newPassword);
+    if (problem) nextErrors.newPassword = problem;
+    if (form.newPassword === form.currentPassword) nextErrors.newPassword = 'The new password must be different from the current password.';
+    if (form.newPassword !== form.confirmPassword) nextErrors.confirmPassword = 'Passwords do not match.';
+    setErrors(nextErrors);
+    setFormError('');
+    setSuccess(false);
+    if (Object.keys(nextErrors).length) return;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitError('');
-    if (!validate()) return;
-    setLoading(true);
+    setBusy(true);
     try {
-      await authApi.changePassword({ currentPassword: form.currentPassword, newPassword: form.newPassword });
-      snackbar.success('Password changed! Please sign in with your new password.');
-      await logout();
-      navigate('/login', { replace: true });
-    } catch (err) {
-      setSubmitError(err?.response?.data?.data?.message || err.message || 'Failed to change password.');
+      await authApi.changePassword({
+        currentPassword: form.currentPassword,
+        newPassword: form.newPassword,
+      });
+      updateUser({ mustChangePassword: false });
+      setSuccess(true);
+      toast.success('Your password has been updated.');
+      setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      if (mustChangePassword) {
+        window.setTimeout(() => navigate('/', { replace: true }), 700);
+      }
+    } catch (error) {
+      setFormError(getErrorMessage(error, 'Password could not be updated.'));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh', backgroundColor: brandColors.slate[50],
-        display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3,
-      }}
-    >
-      <Box sx={{ width: '100%', maxWidth: 440 }}>
-        <Paper sx={{ p: { xs: 3, sm: 4 }, borderRadius: 3 }}>
-          <Box
-            sx={{
-              width: 52, height: 52, borderRadius: 2,
-              backgroundColor: brandColors.primary.subtle,
-              color: brandColors.primary.main,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2,
-            }}
-          >
-            <LockResetRoundedIcon fontSize="medium" />
-          </Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, mb: 0.5 }}>Change Password</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            You must set a new password before continuing.
-          </Typography>
+    <AuthLayout>
+      <div className="auth-card">
+        <div className="auth-form-head">
+          <p className="page-eyebrow">Account security</p>
+          <h1>Change your password</h1>
+          <p>{user?.name ? `${user.name}, update the password for ${user.email}.` : 'Update the password for your account.'}</p>
+        </div>
 
-          {submitError && <Alert severity="error" sx={{ mb: 2.5, borderRadius: 2 }}>{submitError}</Alert>}
+        <div className="auth-form">
+          {mustChangePassword && (
+            <div className="auth-alert auth-alert-info">
+              <KeyRound size={15} />
+              <span>Your account was created with a temporary password. Set a new password to continue into the workspace.</span>
+            </div>
+          )}
+          {success && (
+            <div className="auth-alert auth-alert-success" role="status">
+              <CheckCircle2 size={15} />
+              <span>Password updated. {mustChangePassword ? 'Taking you to your dashboard…' : ''}</span>
+            </div>
+          )}
+          {formError && (
+            <div className="auth-alert" role="alert">
+              <AlertCircle size={15} />
+              <span>{formError}</span>
+            </div>
+          )}
 
-          <Box component="form" onSubmit={handleSubmit} noValidate>
-            <Stack spacing={2.5}>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Current Password</Typography>
-                <TextField
-                  fullWidth type={showCurrent ? 'text' : 'password'}
-                  value={form.currentPassword} onChange={set('currentPassword')}
-                  error={Boolean(errors.currentPassword)} helperText={errors.currentPassword}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton onClick={() => setShowCurrent(!showCurrent)} size="small">
-                          {showCurrent ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
+          <form onSubmit={handleSubmit} noValidate>
+            <Field label="Current password" htmlFor="current-password" required error={errors.currentPassword}>
+              {({ describedBy }) => (
+                <PasswordInput
+                  id="current-password"
+                  value={form.currentPassword}
+                  onChange={update('currentPassword')}
+                  autoComplete="current-password"
+                  placeholder="Enter your current password"
+                  describedBy={describedBy}
+                  disabled={busy}
                 />
-              </Box>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>New Password</Typography>
-                <TextField
-                  fullWidth type={showNew ? 'text' : 'password'}
-                  placeholder="Min 8 chars, uppercase + number"
-                  value={form.newPassword} onChange={set('newPassword')}
-                  error={Boolean(errors.newPassword)} helperText={errors.newPassword}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton onClick={() => setShowNew(!showNew)} size="small">
-                          {showNew ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
+              )}
+            </Field>
+            <Field label="New password" htmlFor="new-password" required error={errors.newPassword} hint="At least 8 characters with a letter and a number.">
+              {({ describedBy }) => (
+                <PasswordInput
+                  id="new-password"
+                  value={form.newPassword}
+                  onChange={update('newPassword')}
+                  autoComplete="new-password"
+                  placeholder="Create a new password"
+                  describedBy={describedBy}
+                  disabled={busy}
                 />
-              </Box>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>Confirm New Password</Typography>
-                <TextField
-                  fullWidth type={showNew ? 'text' : 'password'}
-                  value={form.confirmPassword} onChange={set('confirmPassword')}
-                  error={Boolean(errors.confirmPassword)} helperText={errors.confirmPassword}
+              )}
+            </Field>
+            <Field label="Confirm new password" htmlFor="confirm-new-password" required error={errors.confirmPassword}>
+              {({ describedBy }) => (
+                <PasswordInput
+                  id="confirm-new-password"
+                  value={form.confirmPassword}
+                  onChange={update('confirmPassword')}
+                  autoComplete="new-password"
+                  placeholder="Repeat the new password"
+                  describedBy={describedBy}
+                  disabled={busy}
                 />
-              </Box>
-              <Button type="submit" fullWidth variant="contained" size="large" disabled={loading} sx={{ py: 1.4, fontWeight: 700, mt: 1 }}>
-                {loading ? <CircularProgress size={24} color="inherit" /> : 'Update Password'}
-              </Button>
-            </Stack>
-          </Box>
-        </Paper>
-      </Box>
-    </Box>
+              )}
+            </Field>
+
+            <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={busy}>
+              {busy ? 'Updating password…' : 'Update password'}
+            </button>
+          </form>
+
+          {!mustChangePassword && (
+            <p className="auth-form-footer">
+              <Link to="/" className="text-button" style={{ justifyContent: 'center' }}>
+                <ArrowLeft size={14} /> Back to dashboard
+              </Link>
+            </p>
+          )}
+        </div>
+      </div>
+    </AuthLayout>
   );
-};
-
-export default ChangePasswordPage;
+}
