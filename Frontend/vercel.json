@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://backendfixed-jade.vercel.app/api/$1"
+      "destination": "https://hcm-lite-frontend-iloq.vercel.app/api/$1"
     },
     {
       "source": "/(.*)",
