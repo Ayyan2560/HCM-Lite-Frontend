@@ -4,8 +4,6 @@ import axios from 'axios';
 // VITE_API_URL pointing at another frontend deployment breaks cookie sessions.
 const productionApiOrigin = 'https://hcm-lite-frontend-iloq.vercel.app';
 const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-const pointsToFrontend = /^https?:\/\/hcm-lite-frontend-[^/]+\.vercel\.app(?:\/api)?$/i.test(envApiUrl);
-const isRelativeApiUrl = envApiUrl.startsWith('/');
 
 // Use the explicitly selected backend in production, even if Vercel still
 // has an older VITE_API_URL saved in its environment variables.
