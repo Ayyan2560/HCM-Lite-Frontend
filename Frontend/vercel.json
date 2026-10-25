@@ -1,6 +1,9 @@
-
 {
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://backendfixed-jade.vercel.app/api/$1"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
