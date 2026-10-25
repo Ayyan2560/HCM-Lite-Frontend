@@ -1,6 +1,12 @@
 import axios from 'axios';
 
-const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+// In production, call the API's own origin directly so its HttpOnly auth cookie
+// is stored and sent to the backend domain, rather than relying on a frontend rewrite.
+const productionApiOrigin = 'https://backendfixed-jade.vercel.app';
+const configured = String(
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? productionApiOrigin : '')
+).trim().replace(/\/+$/, '');
 
 // Accept either "http://host:5000" or "http://host:5000/api".
 export const apiBaseURL = configured
