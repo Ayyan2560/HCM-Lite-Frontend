@@ -1,46 +1,39 @@
-import multer from 'multer';
-import path from 'path';
-import fs from 'node:fs';
-import crypto from 'node:crypto';
+import multer from 'multer'
+import cloudinary from '../config/cloudinary.mjs'
 
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+import { Readable } from 'node:stream'
 
-// Ensure uploads directory exists on startup.
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-}
-
-const ALLOWED_EXTENSIONS = /\.(jpg|jpeg|png|webp)$/i;
-const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
-
-const storage = multer.diskStorage({
-  destination(_req, _file, cb) {
-    cb(null, UPLOAD_DIR);
-  },
-  filename(_req, file, cb) {
-    // Use a random hex name to prevent path traversal and name collisions.
-    const ext = path.extname(file.originalname).toLowerCase().replace(/[^.a-z]/g, '');
-    const safe = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
-    cb(null, safe);
-  },
-});
+const storage = multer.memoryStorage()
 
 const fileFilter = (_req, file, cb) => {
-  const extOk = ALLOWED_EXTENSIONS.test(file.originalname);
-  // file.mimetype is client-supplied, so we check both extension AND MIME type.
-  const mimeOk = ALLOWED_MIME_TYPES.has(file.mimetype);
-  if (extOk && mimeOk) {
-    cb(null, true);
+  const allowed = ['image/jpeg', 'image/png', 'image/webp']
+
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true)
   } else {
-    cb(new Error('Only JPEG, PNG, and WebP images are accepted.'));
+    cb(new Error('Only JPEG, PNG, and WebP images are accepted.'))
   }
-};
+}
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 1 },
-});
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 }
+})
 
-export default upload;
+// Helper for controllers to upload a buffered file to Cloudinary.
+export const uploadToCloudinary = file =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'hcm-lite', resource_type: 'image' },
+      (error, result) => {
+        if (error) return reject(error)
+        resolve(result)
+      }
+    )
+
+    Readable.from(file.buffer).pipe(stream)
+  })
+
+
+export default upload

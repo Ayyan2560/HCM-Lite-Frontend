@@ -454,23 +454,38 @@ export async function exportEmployees(req, res) {
   res.send(csv);
 }
 
-export async function uploadAvatar(req, res) {
-  if (!req.employee) throw notFound('No employee profile linked to this account.');
-  if (!req.file) throw badRequest('No image file was uploaded.');
+import { uploadToCloudinary } from '../middlewares/uploadMiddleware.js'
 
-  const employee = await Employee.findById(req.employee._id);
-  if (!employee) throw notFound('Employee not found.');
+export async function uploadAvatar (req, res) {
+  if (!req.employee) {
+    throw notFound('No employee profile linked to this account.')
+  }
 
-  // Store a relative path; the client resolves it against the API base.
-  employee.avatarUrl = `/uploads/${req.file.filename}`;
-  await employee.save();
+  if (!req.file) {
+    throw badRequest('No image file was uploaded.')
+  }
+
+  const employee = await Employee.findById(req.employee._id)
+  if (!employee) {
+    throw notFound('Employee not found.')
+  }
+
+  const result = await uploadToCloudinary(req.file)
+
+  employee.avatarUrl = result.secure_url
+  await employee.save()
 
   await recordAudit({
-    req, actor: req.user, action: 'employee.avatar_updated', entityType: 'Employee',
-    entityId: employee._id, summary: `Avatar updated for ${employee.code}`
-  });
+    req,
+    actor: req.user,
+    action: 'employee.avatar_updated',
+    entityType: 'Employee',
+    entityId: employee._id,
+    summary: `Avatar updated for ${employee.code}`
+  })
 
-  ok(res, { avatarUrl: employee.avatarUrl });
+  ok(res, { avatarUrl: employee.avatarUrl })
 }
+
 
 export { serializeEmployee, parseCsv };
