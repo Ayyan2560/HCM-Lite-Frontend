@@ -42,6 +42,16 @@ export function createApp() {
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
 
+  // Root endpoint: make it clear this deployment is the API, not the frontend UI.
+  app.get('/', (_req, res) => {
+    res.json({
+      success: true,
+      service: 'hcm-lite-api',
+      message: 'HCM Lite backend is running.',
+      health: '/api/health',
+      auth: '/api/auth'
+    });
+  });
 
   app.get('/api/health', async (_req, res) => {
     let setupRequired = true;
