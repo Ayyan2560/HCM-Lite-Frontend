@@ -1,12 +1,15 @@
 import axios from 'axios';
 
-// In production, call the API's own origin directly so its HttpOnly auth cookie
-// is stored and sent to the backend domain, rather than relying on a frontend rewrite.
+// In production, authenticate directly against the backend origin. A stale
+// VITE_API_URL pointing at another frontend deployment breaks cookie sessions.
 const productionApiOrigin = 'https://backendfixed-jade.vercel.app';
-const configured = String(
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? productionApiOrigin : '')
-).trim().replace(/\/+$/, '');
+const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+const pointsToFrontend = /^https?:\/\/hcm-lite-frontend-[^/]+\.vercel\.app(?:\/api)?$/i.test(envApiUrl);
+const isRelativeApiUrl = envApiUrl.startsWith('/');
+
+const configured = import.meta.env.PROD
+  ? (envApiUrl && !pointsToFrontend && !isRelativeApiUrl ? envApiUrl : productionApiOrigin)
+  : envApiUrl;
 
 // Accept either "http://host:5000" or "http://host:5000/api".
 export const apiBaseURL = configured
