@@ -1,15 +1,9 @@
 import axios from 'axios';
 
-// In production, authenticate directly against the backend origin. A stale
-// VITE_API_URL pointing at another frontend deployment breaks cookie sessions.
-const productionApiOrigin = 'https://hcm-lite-frontend-iloq.vercel.app';
+// In production, call the same-origin /api path. Frontend/vercel.json
+// rewrites it to the backend, avoiding cross-site auth-cookie restrictions.
 const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-
-// Use the explicitly selected backend in production, even if Vercel still
-// has an older VITE_API_URL saved in its environment variables.
-const configured = import.meta.env.PROD
-  ? productionApiOrigin
-  : envApiUrl;
+const configured = import.meta.env.PROD ? '' : envApiUrl;
 
 // Accept either "http://host:5000" or "http://host:5000/api".
 export const apiBaseURL = configured
