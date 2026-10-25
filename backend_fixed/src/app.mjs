@@ -34,7 +34,11 @@ const normalizeOrigin = value => {
 
 // Keep configured origins and explicitly allow the deployed frontend.
 const allowedClientOrigins = new Set(
-  [...env.clientOrigins, 'https://hcm-lite-frontend-five.vercel.app']
+  [
+    ...env.clientOrigins,
+    'https://hcm-lite-frontend-five.vercel.app',
+    'https://hcm-lite-frontend-iloq.vercel.app'
+  ]
     .map(normalizeOrigin)
     .filter(Boolean)
 )
