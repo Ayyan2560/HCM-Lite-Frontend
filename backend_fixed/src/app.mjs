@@ -42,9 +42,6 @@ export function createApp() {
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
 
-  // Serve uploaded files (profile avatars, etc.).  Read-only; no listing.
-  const uploadsDir = path.join(repoRoot, 'uploads');
-  app.use('/uploads', express.static(uploadsDir, { index: false, dotfiles: 'deny' }));
 
   app.get('/api/health', async (_req, res) => {
     let setupRequired = true;

@@ -5,8 +5,8 @@
   "main": "src/server.mjs",
   "type": "module",
   "scripts": {
-    "start": "nodemon server.mjs",
-    "dev": "nodemon --watch src/server.mjs",
+    "start": "node src/server.mjs",
+    "dev": "nodemon --watch src src/server.mjs",
     "seed": "node scripts/seed.mjs",
     "seed:force": "node scripts/seed.mjs --force",
     "test": "node --test tests/business.test.mjs"
@@ -32,10 +32,10 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "multer": "^2.5.0",
-    "nodemon": "^3.1.14",
     "pdfkit": "^0.15.2"
   },
   "devDependencies": {
-    "mongodb-memory-server": "^10.1.4"
+    "mongodb-memory-server": "^10.1.4",
+    "nodemon": "^3.1.14"
   }
 }

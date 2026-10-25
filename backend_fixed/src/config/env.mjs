@@ -3,8 +3,11 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// serverRoot = the project root (where package.json lives).
 export const serverRoot = path.resolve(here, '..', '..');
-export const repoRoot = path.resolve(serverRoot, '..');
+// repoRoot was previously one level above serverRoot, which escapes /var/task
+// on Vercel. It now points to the same project root.
+export const repoRoot = serverRoot;
 
 // server/.env wins, repo-root .env is a fallback
 dotenv.config({ path: path.join(serverRoot, '.env') });
@@ -32,7 +35,10 @@ export const env = {
   aiBaseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
   aiModel: process.env.AI_MODEL || 'gpt-4o-mini',
   aiTimeoutMs: 15000,
-  dataDir: path.join(repoRoot, '.data')
+  // On Vercel/Lambda only /tmp is writable; use it for the embedded DB data dir.
+  dataDir: (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
+    ? path.join('/tmp', '.data')
+    : path.join(serverRoot, '.data')
 };
 
 const INSECURE_SECRETS = new Set(['hcm-lite-dev-secret-change-me', 'change-me-to-a-long-random-secret', '']);
