@@ -36,8 +36,8 @@ const normalizeOrigin = value => {
 const allowedClientOrigins = new Set(
   [
     ...env.clientOrigins,
-    'https://hcm-lite-frontend-five.vercel.app',
-    'https://hcm-lite-frontend-iloq.vercel.app'
+    'https://hcm-lite-frontend-five.vercel.app/',
+    'https://hcm-lite-frontend-iloq.vercel.app/'
   ]
     .map(normalizeOrigin)
     .filter(Boolean)
