@@ -18,7 +18,8 @@ import OrganizationPage from './pages/OrganizationPage';
 import AnnouncementsPage from './pages/AnnouncementsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import AuditPage from './pages/AuditPage';
-import AIAssistantPage from './pages/AIAssistantPage';
+import AIAssistantPage from './pages/AIAssistantPage'
+
 import NotFoundPage from './pages/NotFoundPage';
 
 function StaffRoute({ children }) {
