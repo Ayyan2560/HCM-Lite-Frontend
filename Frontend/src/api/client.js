@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // In production, authenticate directly against the backend origin. A stale
 // VITE_API_URL pointing at another frontend deployment breaks cookie sessions.
-const productionApiOrigin = 'https://backendfixed-jade.vercel.app';
+const productionApiOrigin = 'https://hcm-lite-frontend-iloq.vercel.app';
 const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const pointsToFrontend = /^https?:\/\/hcm-lite-frontend-[^/]+\.vercel\.app(?:\/api)?$/i.test(envApiUrl);
 const isRelativeApiUrl = envApiUrl.startsWith('/');
