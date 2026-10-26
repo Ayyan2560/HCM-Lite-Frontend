@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+// In production, call the same-origin /api path. Frontend/vercel.json
+// rewrites it to the backend, avoiding cross-site auth-cookie restrictions.
+const envApiUrl = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+const configured = import.meta.env.PROD ? '' : envApiUrl;
 
 // Accept either "http://host:5000" or "http://host:5000/api".
 export const apiBaseURL = configured

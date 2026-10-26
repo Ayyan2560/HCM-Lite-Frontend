@@ -73,16 +73,13 @@ export function AuthProvider({ children }) {
   }, [clearSession]);
 
   const login = useCallback(async (credentials) => {
-    const result = await authApi.login(credentials);
-    // The login response does not include the linked employee profile.
-    try {
-      const session = await authApi.me();
-      applySession(session || result);
-      return session || result;
-    } catch {
-      applySession(result);
-      return result;
-    }
+    // A successful login response is not enough: verify that the browser can
+    // send the session cookie on the next authenticated request.
+    await authApi.login(credentials);
+    const session = await authApi.me();
+    applySession(session);
+    setSessionMessage('');
+    return session;
   }, [applySession]);
 
   const setup = useCallback(async (payload) => {
