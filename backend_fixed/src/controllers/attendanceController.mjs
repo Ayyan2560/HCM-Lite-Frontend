@@ -11,23 +11,61 @@ import {
 import { recordAudit } from '../services/auditService.mjs';
 import { notifyEmployee, notifyRole } from '../services/notificationService.mjs';
 
-function locationFrom(body = {}) {
-  const latitude = body.latitude === undefined || body.latitude === null || body.latitude === '' ? null : Number(body.latitude);
-  const longitude = body.longitude === undefined || body.longitude === null || body.longitude === '' ? null : Number(body.longitude);
-  const accuracy = body.accuracy === undefined || body.accuracy === null || body.accuracy === '' ? null : Number(body.accuracy);
-  return { latitude, longitude, accuracy };
+function locationFrom (body = {}) {
+  const latitude =
+    body.latitude === undefined ||
+    body.latitude === null ||
+    body.latitude === ''
+      ? null
+      : Number(body.latitude)
+  const longitude =
+    body.longitude === undefined ||
+    body.longitude === null ||
+    body.longitude === ''
+      ? null
+      : Number(body.longitude)
+  const accuracy =
+    body.accuracy === undefined ||
+    body.accuracy === null ||
+    body.accuracy === ''
+      ? null
+      : Number(body.accuracy)
+  return { latitude, longitude, accuracy }
+}
+
+function sourceFrom (body = {}) {
+  return body.source === 'camera' ? 'camera' : 'web'
+}
+
+function faceCountFrom (body = {}) {
+  if (body.source !== 'camera') return null
+  return body.faceCount === undefined ? null : Number(body.faceCount)
 }
 
 export async function checkIn(req, res) {
   if (!req.employee) throw badRequest('No employee profile is linked to this account.');
+
+  const source = req.body?.source === 'camera' ? 'camera' : 'web';
+  const faceCount = source === 'camera'
+    ? (req.body?.faceCount === undefined ? null : Number(req.body.faceCount))
+    : null;
+
+  if (source === 'camera') {
+    if (faceCount === null) throw badRequest('Camera check-in requires faceCount.');
+    if (faceCount === 0) throw badRequest('No face detected. Face the camera directly.');
+    if (faceCount > 1) throw badRequest('Multiple faces detected. Only one person may check in at a time.');
+  }
+
   const org = await getOrganization();
   const record = await createCheckIn({
     employee: req.employee,
     org,
     user: req.user,
     location: locationFrom(req.body),
-    note: requireString(req.body?.note || '', 'Note', { min: 0, max: 300 })
+    source,
+    faceCount,
   });
+  
   const config = orgConfig(org);
   ok(res, {
     id: record._id.toString(),

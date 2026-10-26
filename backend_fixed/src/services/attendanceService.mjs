@@ -211,7 +211,7 @@ export function geofenceValidation({ org, latitude, longitude, accuracy }) {
   return { enforced: true, distance };
 }
 
-export async function checkIn({ employee, org, user, location = {}, note = '' }) {
+export async function checkIn({ employee, org, user, location = {}, note = '', source = 'web', faceCount = null }) {
   const config = orgConfig(org);
   const { dateKey, time } = currentTime(config);
   const existing = await Attendance.findOne({ employee: employee._id, date: dateKey });
@@ -220,19 +220,23 @@ export async function checkIn({ employee, org, user, location = {}, note = '' })
   const checkInDate = zonedDateTimeToUtc(dateKey, time, config.timezone);
   const lateThreshold = minutesFromTime(config.workStartTime) + config.graceMinutes;
   const lateMinutes = Math.max(0, minutesFromTime(time) - lateThreshold);
+ 
   try {
-    return await Attendance.create({
-      employee: employee._id,
-      date: dateKey,
-      checkIn: checkInDate,
-      checkOut: null,
-      status: lateMinutes > 0 ? 'late' : 'present',
-      lateMinutes,
-      workedMinutes: 0,
-      checkInMeta: { ...location, distance: geo.distance ?? null },
-      source: 'web',
-      note
-    });
+  return Attendance.create({
+    employee: employee._id,
+    date: dateKey,
+    checkIn: checkInDate,
+    status: lateMinutes > 0 ? 'late' : 'present',
+    lateMinutes,
+    checkInMeta: {
+      ...location,
+      distance: geo.distance ?? null
+    },
+    source,
+    faceCount,
+    note
+  });
+
   } catch (error) {
     if (error?.code === 11000) throw conflict('An attendance record already exists for today.');
     throw error;

@@ -1,9 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+// Add Camera to it:
 import {
-  AlertCircle, CalendarCheck2, CheckCircle2, ClipboardCheck, Clock3, FileClock,
-  Plus, RefreshCw, Search, TimerReset, XCircle,
-} from 'lucide-react';
+  AlertCircle,
+  CalendarCheck2,
+  Camera,
+  CheckCircle2,
+  ClipboardCheck,
+  Clock3,
+  FileClock,
+  Plus,
+  RefreshCw,
+  Search,
+  TimerReset,
+  XCircle
+} from 'lucide-react'
+
+import CameraCheckIn from '../components/attendance/CameraCheckIn'
+import { ATTENDANCE_STATUS_LABELS } from '../lib/constants';
+import employeesApi from '../api/employees';
 import PageHeader from '../components/ui/PageHeader';
 import Badge from '../components/ui/Badge';
 import EmptyState from '../components/ui/EmptyState';
@@ -12,19 +27,18 @@ import Modal from '../components/ui/Modal';
 import Field from '../components/ui/Field';
 import Pagination from '../components/ui/Pagination';
 import PunchCard from '../components/attendance/PunchCard';
+
 import StatCard from '../components/ui/StatCard';
 import { PageSkeleton, TableSkeleton } from '../components/ui/Skeleton';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import attendanceApi from '../api/attendance';
-import employeesApi from '../api/employees';
 import { getErrorMessage, getFieldErrors } from '../api/client';
 import { getAttendanceLocation } from '../lib/browser';
 import {
   formatDate, formatDateLong, formatDuration, formatNumber, formatTime,
   monthStartKey, todayKey, weekday,
 } from '../lib/format';
-import { ATTENDANCE_STATUS_LABELS } from '../lib/constants';
 
 const DAY_FILTERS = [
   { value: '', label: 'All recorded days' },
@@ -88,6 +102,7 @@ function MyAttendance({ organization }) {
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionsLoading, setCorrectionsLoading] = useState(true);
   const [correctionsError, setCorrectionsError] = useState('');
+  const [showCamera, setShowCamera] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,6 +151,19 @@ function MyAttendance({ organization }) {
     }
   };
 
+const handleCameraCheckIn = useCallback(
+  async payload => {
+    // payload = { source:'camera', faceCount:1, latitude, longitude, accuracy }
+    const result = await attendanceApi.checkIn(payload)
+    toast.success(`Camera check-in at ${formatTime(result.checkIn)}.`)
+    setShowCamera(false)
+    await load()
+    return result
+  },
+  [load, toast]
+)
+
+
   const days = useMemo(() => {
     const source = [...(data?.days || [])].reverse();
     if (dayFilter) return source.filter((day) => day.kind === dayFilter);
@@ -144,7 +172,7 @@ function MyAttendance({ organization }) {
 
   const rangeInvalid = range.from && range.to && range.from > range.to;
 
-  if (loading && !data) return <PageSkeleton />;
+    if (loading && !data) return <PageSkeleton />;
 
   return (
     <div>
@@ -163,26 +191,58 @@ function MyAttendance({ organization }) {
 
       {!error && data && (
         <>
-          <div className="clock-panel">
-            <PunchCard
-              data={data}
-              organization={organization}
-              onCheckIn={() => handlePunch('in')}
-              onCheckOut={() => handlePunch('out')}
-              busy={punchBusy}
-            />
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <h2 className="card-title">Period summary</h2>
-                  <p className="card-description">{formatDate(data.from)} – {formatDate(data.to)}</p>
-                </div>
-              </div>
-              <div className="card-body">
-                <SummaryStats summary={data.summary} />
-              </div>
-            </div>
-          </div>
+         ;<div className='clock-panel'>
+  <PunchCard
+    data={data}
+    organization={organization}
+    onCheckIn={() => handlePunch('in')}
+    onCheckOut={() => handlePunch('out')}
+    busy={punchBusy}
+  />
+  <div className='card'>
+    <div className='card-header'>
+      <div>
+        <h2 className='card-title'>Period summary</h2>
+        <p className='card-description'>
+          {formatDate(data.from)} – {formatDate(data.to)}
+        </p>
+      </div>
+    </div>
+    <div className='card-body'>
+      <SummaryStats summary={data.summary} />
+    </div>
+  </div>
+</div>
+
+{
+  !data?.today?.record?.checkIn && !showCamera && (
+    <button
+      type='button'
+      className='btn btn-secondary'
+      style={{ marginBottom: 16 }}
+      onClick={() => setShowCamera(true)}
+    >
+      <Camera size={15} /> Check in with camera
+    </button>
+  )
+}
+
+{
+  showCamera && (
+    <div style={{ marginBottom: 16 }}>
+      <CameraCheckIn
+        organization={organization}
+        onSuccess={handleCameraCheckIn}
+        onCancel={() => setShowCamera(false)}
+        onFallback={() => {
+          setShowCamera(false)
+          setCorrectionOpen(true)
+        }}
+      />
+    </div>
+  )
+}
+
 
           <div className="tabs" role="tablist" aria-label="Attendance sections">
             <button type="button" role="tab" aria-selected={tab === 'history'} className={`tab ${tab === 'history' ? 'tab-active' : ''}`} onClick={() => setTab('history')}>

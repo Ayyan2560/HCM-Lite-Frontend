@@ -23,7 +23,8 @@ const attendanceSchema = new mongoose.Schema(
       accuracy: { type: Number, default: null },
       distance: { type: Number, default: null }
     },
-    source: { type: String, enum: ['web', 'correction', 'import'], default: 'web' },
+    source: { type: String, enum: ['web', 'camera', 'correction', 'import'], default: 'web' },
+    faceCount: { type: Number, default: null },
     note: { type: String, default: '', maxlength: 300 }
   },
   { timestamps: true }
